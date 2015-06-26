@@ -220,6 +220,8 @@ class INET_API IPv4 : public QueueBase, public INetfilter, public ILifecycle, pu
 
     virtual void sendPacketToNIC(cPacket *packet, const InterfaceEntry *ie);
 
+    virtual void sendToIcmp(IPv4Datagram* dgram, int srcInterfaceId, ICMPType type, ICMPCode code);
+
   public:
     IPv4();
     virtual ~IPv4();
@@ -304,6 +306,8 @@ class INET_API IPv4 : public QueueBase, public INetfilter, public ILifecycle, pu
     virtual void stop();
     virtual void start();
     virtual void flush();
+
+    friend class IPv4FragBuf;
 };
 
 } // namespace inet
