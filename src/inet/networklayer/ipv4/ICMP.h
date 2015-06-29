@@ -41,6 +41,7 @@ class INET_API ICMP : public cSimpleModule, public IProtocolRegistrationListener
     std::set<int> transportProtocols;    // where to send up packets
   protected:
     virtual void processICMPMessage(ICMPMessage *);
+    virtual void processIcmpErrorFromIPv4(IPv4Datagram *dgram);
     virtual void processUpperMessage(cMessage *msg);
     virtual void errorOut(ICMPMessage *);
     virtual void processEchoRequest(ICMPMessage *);

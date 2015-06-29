@@ -28,6 +28,7 @@
 #include "inet/networklayer/contract/ipv4/IPv4ControlInfo.h"
 #include "inet/applications/pingapp/PingPayload_m.h"
 #include "inet/networklayer/ipv4/IPv4InterfaceData.h"
+#include "inet/networklayer/ipv4/IcmpErrorFromIPControlInfo_m.h"
 #include "inet/networklayer/contract/IInterfaceTable.h"
 #include "inet/common/ModuleAccess.h"
 
@@ -93,7 +94,10 @@ void ICMP::handleMessage(cMessage *msg)
     // process arriving ICMP message
     if (!strcmp(arrivalGate->getName(), "ipIn")) {
         EV_INFO << "Received " << msg << " from network protocol.\n";
-        processICMPMessage(check_and_cast<ICMPMessage *>(msg));
+        if (ICMPMessage *icmpMsg = dynamic_cast<ICMPMessage *>(msg))
+            processICMPMessage(icmpMsg);
+        else
+            processIcmpErrorFromIPv4(check_and_cast<IPv4Datagram *>(msg));
         return;
     }
     else if (!strcmp(arrivalGate->getName(), "transportIn")) {
@@ -289,6 +293,13 @@ void ICMP::processICMPMessage(ICMPMessage *icmpmsg)
         default:
             throw cRuntimeError("Unknown ICMP type %d", icmpmsg->getType());
     }
+}
+
+void ICMP::processIcmpErrorFromIPv4(IPv4Datagram *dgram)
+{
+    IcmpErrorFromIPControlInfo *ctrl = check_and_cast<IcmpErrorFromIPControlInfo *>(dgram->removeControlInfo());
+    sendErrorMessage(dgram, ctrl->getInterfaceId(), (ICMPType)ctrl->getIcmpType(), ctrl->getIcmpCode());
+    delete ctrl;
 }
 
 void ICMP::errorOut(ICMPMessage *icmpmsg)

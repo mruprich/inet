@@ -26,6 +26,7 @@
 #include "inet/networklayer/arp/ipv4/ARPPacket_m.h"
 #include "inet/networklayer/contract/IARP.h"
 #include "inet/networklayer/ipv4/ICMPMessage_m.h"
+#include "inet/networklayer/ipv4/IcmpErrorFromIPControlInfo_m.h"
 #include "inet/linklayer/common/Ieee802Ctrl.h"
 #include "inet/networklayer/ipv4/IIPv4RoutingTable.h"
 #include "inet/networklayer/contract/ipv4/IPv4ControlInfo.h"
@@ -1155,7 +1156,12 @@ void IPv4::receiveSignal(cComponent *source, simsignal_t signalID, cObject *obj)
 
 void IPv4::sendToIcmp(IPv4Datagram* datagram, int srcInterfaceId, ICMPType type, ICMPCode code)
 {
-    icmp->sendErrorMessage(datagram, srcInterfaceId, type, code);
+    auto ctrl = new IcmpErrorFromIPControlInfo();
+    ctrl->setInterfaceId(srcInterfaceId);
+    ctrl->setIcmpType(type);
+    ctrl->setIcmpCode(code);
+    datagram->setControlInfo(ctrl);
+    send(datagram, "transportOut");
 }
 
 } // namespace inet
