@@ -28,10 +28,16 @@ namespace inet;
 
 enum ICMPType;
 
+enum IcmpErrorDirection {
+    TO_NETWORK = 1;
+    TO_LOCAL = 2;
+};
+
 class IcmpErrorFromIPControlInfo
 {
     @implements(IPacketControlInfo);
     int packetProtocolId = Protocol::icmpv4.getId();
+    int direction @enum(IcmpErrorDirection) = 0;
     int interfaceId = -1;
     int icmpType @enum(ICMPType) = -1;
     int icmpCode = -1;

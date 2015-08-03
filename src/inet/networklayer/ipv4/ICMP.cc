@@ -235,6 +235,40 @@ void ICMP::processUpperMessage(cMessage *msg)
     delete icmpCtrl;
 }
 
+void ICMP::sendUpIcmpError(IPv4Datagram *bogusL3Packet, ICMPType icmpType, int icmpCode)
+{
+    // ICMP errors are delivered to the appropriate higher layer protocol
+    cPacket *bogusTransportPacket = bogusL3Packet->decapsulate();
+    if (bogusTransportPacket) {
+        int transportProtocol = bogusL3Packet->getTransportProtocol();
+        if (transportProtocol == IP_PROT_ICMP) {
+            EV_DETAIL << "ICMP error response for ICMP packet, packet dropped\n";
+            delete bogusTransportPacket;
+        }
+        else if (transportProtocols.find(transportProtocol) == transportProtocols.end()) {
+            EV_WARN << "Transport protocol " << transportProtocol << " not registered, packet dropped\n";
+            delete bogusTransportPacket;
+        }
+        else {
+            IcmpErrorControlInfo *ctrl = new IcmpErrorControlInfo();
+            ctrl->setTransportProtocol(bogusL3Packet->getTransportProtocol());
+            ctrl->setSourceAddress(bogusL3Packet->getSourceAddress());
+            ctrl->setDestinationAddress(bogusL3Packet->getDestinationAddress());
+            int icmpUpErrCode = icmpToErrorCode(icmpType, icmpCode);
+            ctrl->setErrorCode(icmpUpErrCode);
+            bogusTransportPacket->setControlInfo(ctrl);
+            cEnum *enump = cEnum::get("inet::IcmpErrorControlInfoErrorCodes");
+            const char *namep = enump->getStringFor(icmpUpErrCode);
+            if (!namep)
+                namep = "ICMP ERROR";
+            std::string name = std::string() + namep + " (" + bogusTransportPacket->getName() + ")";
+            bogusTransportPacket->setName(name.c_str());
+            send(bogusTransportPacket, "transportOut");
+        }
+    }
+    delete bogusL3Packet;
+}
+
 void ICMP::processICMPMessage(ICMPMessage *icmpmsg)
 {
     switch (icmpmsg->getType()) {
@@ -247,29 +281,9 @@ void ICMP::processICMPMessage(ICMPMessage *icmpmsg)
         case ICMP_TIME_EXCEEDED:
         case ICMP_PARAMETER_PROBLEM: {
             // ICMP errors are delivered to the appropriate higher layer protocol
-            IPv4Datagram *bogusL3Packet = check_and_cast<IPv4Datagram *>(icmpmsg->getEncapsulatedPacket());
-            cPacket *bogusTransportPacket = bogusL3Packet->decapsulate();
-            if (bogusTransportPacket) {
-                int transportProtocol = bogusL3Packet->getTransportProtocol();
-                if (transportProtocol == IP_PROT_ICMP) {
-                    EV_DETAIL << "ICMP error response for ICMP packet, packet dropped\n";
-                    delete bogusTransportPacket;
-                }
-                else if (transportProtocols.find(transportProtocol) == transportProtocols.end()) {
-                    EV_WARN << "Transport protocol " << transportProtocol << " not registered, packet dropped\n";
-                    delete bogusTransportPacket;
-                }
-                else {
-                    IcmpErrorControlInfo *ctrl = new IcmpErrorControlInfo();
-                    ctrl->setTransportProtocol(bogusL3Packet->getTransportProtocol());
-                    ctrl->setSourceAddress(bogusL3Packet->getSourceAddress());
-                    ctrl->setDestinationAddress(bogusL3Packet->getDestinationAddress());
-                    ctrl->setErrorCode(icmpToErrorCode(icmpmsg->getType(), icmpmsg->getCode()));
-                    bogusTransportPacket->setControlInfo(ctrl);
-                    bogusTransportPacket->setName(icmpmsg->getName());
-                    send(bogusTransportPacket, "transportOut");
-                }
-            }
+            icmpmsg->setByteLength(0);  // Hack for prevent cRuntimeError: decapsulate(): packet length is smaller than encapsulated packet.
+            IPv4Datagram *bogusL3Packet = check_and_cast<IPv4Datagram *>(icmpmsg->decapsulate());
+            sendUpIcmpError(bogusL3Packet, (ICMPType)icmpmsg->getType(), icmpmsg->getCode());
             delete icmpmsg;
             break;
         }
@@ -298,7 +312,16 @@ void ICMP::processICMPMessage(ICMPMessage *icmpmsg)
 void ICMP::processIcmpErrorFromIPv4(IPv4Datagram *dgram)
 {
     IcmpErrorFromIPControlInfo *ctrl = check_and_cast<IcmpErrorFromIPControlInfo *>(dgram->removeControlInfo());
-    sendErrorMessage(dgram, ctrl->getInterfaceId(), (ICMPType)ctrl->getIcmpType(), ctrl->getIcmpCode());
+    switch (ctrl->getDirection()) {
+        case TO_NETWORK:
+            sendErrorMessage(dgram, ctrl->getInterfaceId(), (ICMPType)ctrl->getIcmpType(), ctrl->getIcmpCode());
+            break;
+        case TO_LOCAL:
+            sendUpIcmpError(dgram, (ICMPType)ctrl->getIcmpType(), ctrl->getIcmpCode());
+            break;
+        default:
+            throw cRuntimeError("Invalid direction %d in IcmpErrorFromIPControlInfo", ctrl->getDirection());
+    }
     delete ctrl;
 }
 
